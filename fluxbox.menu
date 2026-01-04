@@ -1,0 +1,9 @@
+[begin] (Hex)
+  [exec] (HexGUI) {java -jar /opt/hexgui/lib/hexgui.jar}
+  [exec] (MoHex Terminal) {xterm -e /opt/benzene/build/src/mohex/mohex}
+  [separator]
+  [exec] (Terminal) {xterm}
+  [separator]
+  [restart] (Restart)
+  [exit] (Exit)
+[end]
