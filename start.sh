@@ -24,9 +24,8 @@ sleep 2
 fluxbox &
 sleep 1
 
-# Launch HexGUI
-# HexGUI is built with ant, the JAR is in lib/ directory
-java -jar /opt/hexgui/lib/hexgui.jar &
+# Launch HexGUI with MoHex engine attached
+java -jar /opt/hexgui/lib/hexgui.jar -program "/opt/benzene/build/src/mohex/mohex" &
 
 # Start VNC server with optimizations
 x11vnc -display "$DISPLAY" -localhost -shared -forever -rfbport 5900 -nopw \

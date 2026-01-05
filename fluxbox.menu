@@ -1,5 +1,6 @@
 [begin] (Hex)
-  [exec] (HexGUI) {java -jar /opt/hexgui/lib/hexgui.jar}
+  [exec] (HexGUI + MoHex) {java -jar /opt/hexgui/lib/hexgui.jar -program "/opt/benzene/build/src/mohex/mohex"}
+  [exec] (HexGUI Only) {java -jar /opt/hexgui/lib/hexgui.jar}
   [exec] (MoHex Terminal) {xterm -e /opt/benzene/build/src/mohex/mohex}
   [separator]
   [exec] (Terminal) {xterm}
