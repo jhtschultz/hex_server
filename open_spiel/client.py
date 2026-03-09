@@ -149,6 +149,41 @@ class HexClient:
         except requests.RequestException as exc:
             raise HexTransportError(str(exc)) from exc
 
+    def get_params(self) -> Dict[str, str]:
+        """Get all current MoHex engine parameters."""
+        try:
+            response = self._session.get(
+                f"{self._endpoint}/api/param",
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("params", {})
+        except requests.RequestException as exc:
+            raise HexTransportError(str(exc)) from exc
+
+    def set_params(self, **params) -> Dict[str, bool]:
+        """
+        Set MoHex engine parameters.
+
+        Args:
+            **params: Parameter name=value pairs, e.g.,
+                max_time=5, num_threads=2, max_games=10000
+        """
+        try:
+            response = self._session.post(
+                f"{self._endpoint}/api/param",
+                json=params,
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not data.get("success"):
+                raise HexResponseError(f"set_params failed: {data}")
+            return data.get("results", {})
+        except requests.RequestException as exc:
+            raise HexTransportError(str(exc)) from exc
+
     def genmove(
         self,
         color: str,

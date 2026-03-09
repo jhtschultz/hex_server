@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import pyspiel
 
@@ -18,7 +18,23 @@ logger = logging.getLogger(__name__)
 
 
 class HexBot:
-    """Bot that queries a remote MoHex server for Hex moves."""
+    """Bot that queries a remote MoHex server for Hex moves.
+
+    MoHex engine parameters can be passed as keyword arguments.
+    Key parameters:
+        max_time:        Seconds per move (default 10)
+        max_games:       Max MCTS simulations per move (default 99999999)
+        max_nodes:       Max tree nodes (default 11363636)
+        max_memory:      Memory limit in bytes (default ~2GB)
+        num_threads:     Parallel search threads (default 1)
+        use_rave:        Use RAVE values (default 1)
+        reuse_subtree:   Reuse search tree between moves (default 1)
+        uct_bias_constant:  UCT exploration constant (default 0.22)
+        expand_threshold:   Min visits before expanding (default 10)
+        knowledge_threshold: Visits before using knowledge (default 256)
+        first_play_urgency:  FPU value for unvisited nodes (default 0.35)
+        ponder:          Think on opponent's time (default 0)
+    """
 
     def __init__(
         self,
@@ -26,6 +42,7 @@ class HexBot:
         endpoint: Optional[str] = None,
         timeout_seconds: Optional[int] = None,
         client: Optional[HexClient] = None,
+        **mohex_params,
     ) -> None:
         self._client = client or HexClient(
             endpoint=endpoint,
@@ -34,6 +51,8 @@ class HexBot:
         self._timeout_seconds = timeout_seconds
         self._synced_moves: List[str] = []
         self._board_size: Optional[int] = None
+        self._mohex_params = mohex_params
+        self._params_applied = False
 
     def step(self, state: pyspiel.State) -> int:
         """Select an action for the given state (OpenSpiel Bot interface)."""
@@ -49,6 +68,7 @@ class HexBot:
             for action in legal_actions
         }
 
+        self._apply_params()
         self._sync_engine_state(hex_state, board_size)
 
         current_player = hex_state.current_player()
@@ -69,6 +89,16 @@ class HexBot:
                 f"MoHex suggested move '{response.move}' which is not legal."
             )
         return action
+
+    def _apply_params(self) -> None:
+        """Apply MoHex engine parameters (once)."""
+        if self._params_applied or not self._mohex_params:
+            return
+        try:
+            self._client.set_params(**self._mohex_params)
+            self._params_applied = True
+        except HexClientError as exc:
+            logger.warning("Failed to set MoHex params: %s", exc)
 
     def _sync_engine_state(self, state: pyspiel.State, board_size: int) -> None:
         """Sync the remote engine using MoHex's native play-game command.

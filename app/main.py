@@ -172,6 +172,45 @@ def play_game():
     return jsonify({"success": success, "moves_played": len(moves)})
 
 
+@app.route("/api/param", methods=["GET", "POST"])
+def param_mohex():
+    """
+    Get or set MoHex engine parameters.
+
+    GET: Returns all current parameters.
+    POST: Set one or more parameters.
+        Request body: {"max_time": 5, "num_threads": 2, ...}
+    """
+    if request.method == "GET":
+        response = send_gtp_command("param_mohex")
+        success = response.startswith("=")
+        params = {}
+        for line in response.split("\n"):
+            line = line.strip().lstrip("= ")
+            if not line:
+                continue
+            # Parse "[type] name value" format
+            if line.startswith("["):
+                bracket_end = line.index("]")
+                rest = line[bracket_end + 2:]
+                parts = rest.split(None, 1)
+                if len(parts) == 2:
+                    params[parts[0]] = parts[1].strip('"')
+        return jsonify({"success": success, "params": params})
+
+    # POST: set parameters
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing request body"}), 400
+
+    results = {}
+    for key, value in data.items():
+        response = send_gtp_command(f"param_mohex {key} {value}")
+        results[key] = response.startswith("=")
+
+    return jsonify({"success": all(results.values()), "results": results})
+
+
 @app.route("/api/showboard", methods=["GET"])
 def show_board():
     """Get ASCII representation of the current board state."""
