@@ -190,6 +190,11 @@ def _restore_params():
             _send_gtp(mohex, f"{gtp_cmd} {key} {value}")
 
 
+def _process_crashed():
+    """Check if the MoHex process has died.  Caller MUST hold mohex_lock."""
+    return mohex_process is None or mohex_process.poll() is not None
+
+
 # ── Endpoints ────────────────────────────────────────────────────────
 
 @app.route("/api/health")
@@ -312,8 +317,43 @@ def generate_move():
         )
 
         if not timed_out:
+            # Check if the engine crashed (segfault on proven positions).
+            if not response or _process_crashed():
+                log.warning(
+                    "MoHex process crashed during genmove (color=%s)",
+                    color,
+                )
+                _kill_mohex()
+                _replay_position()
+                _restore_params()
+                return jsonify({
+                    "success": False,
+                    "move": "resign",
+                    "color": color,
+                    "engine_resigned": True,
+                    "warning": (
+                        "MoHex considers this position decided and "
+                        "crashed attempting to generate a move."
+                    ),
+                })
+
             success = response.startswith("=")
             move = response.lstrip("=? ").strip()
+
+            # MoHex returns "illegal move: <color> invalid" when it
+            # considers the position already won/lost.
+            if not success or not move or "invalid" in response.lower():
+                return jsonify({
+                    "success": False,
+                    "move": "resign",
+                    "color": color,
+                    "engine_resigned": True,
+                    "warning": (
+                        "MoHex considers this position decided and "
+                        "cannot generate a move."
+                    ),
+                })
+
             if success:
                 with _state_lock:
                     _game_state["history"].append((color, move))
