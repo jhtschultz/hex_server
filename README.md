@@ -37,6 +37,9 @@ The server also exposes a REST API for programmatic access:
 | `/api/clear` | POST | Clear the board |
 | `/api/play` | POST | Play a move |
 | `/api/genmove` | POST | Generate best move |
+| `/api/play-game` | POST | Reset board and play a sequence of moves |
+| `/api/param` | GET | Get all MoHex engine parameters |
+| `/api/param` | POST | Set MoHex engine parameters |
 | `/api/showboard` | GET | Get board state |
 | `/api/undo` | POST | Undo last move |
 
@@ -61,11 +64,47 @@ curl -X POST -H "Content-Type: application/json" \
   -d '{"color": "white"}' \
   https://hex-server-493397232829.us-central1.run.app/api/genmove
 
+# Play a sequence of moves (alternating colors, starting with black)
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"moves": ["a1", "b2", "c3"], "size": 11}' \
+  https://hex-server-493397232829.us-central1.run.app/api/play-game
+
+# Get all MoHex engine parameters
+curl https://hex-server-493397232829.us-central1.run.app/api/param
+
+# Set engine parameters
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"max_time": 5, "num_threads": 2}' \
+  https://hex-server-493397232829.us-central1.run.app/api/param
+
 # Raw GTP command
 curl -X POST -H "Content-Type: application/json" \
   -d '{"command": "showboard"}' \
   https://hex-server-493397232829.us-central1.run.app/api/gtp
 ```
+
+### MoHex Engine Parameters
+
+All parameters are configurable via the `/api/param` endpoint:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_time` | 10 | Seconds per move |
+| `max_games` | 99999999 | Max MCTS simulations per move |
+| `max_nodes` | 11363636 | Max tree nodes |
+| `max_memory` | ~2GB | Memory limit in bytes |
+| `num_threads` | 1 | Parallel search threads |
+| `use_rave` | 1 | Use RAVE values |
+| `reuse_subtree` | 1 | Reuse search tree between moves |
+| `uct_bias_constant` | 0.22 | UCT exploration constant |
+| `expand_threshold` | 10 | Min visits before expanding a node |
+| `knowledge_threshold` | 256 | Visits before using knowledge |
+| `first_play_urgency` | 0.35 | FPU value for unvisited nodes |
+| `ponder` | 0 | Think on opponent's time |
+| `progressive_bias` | 2.47 | Progressive bias weight |
+| `rave_weight_initial` | 2.12 | Initial RAVE weight |
+| `rave_weight_final` | 830 | Final RAVE weight |
+| `virtual_loss` | 1 | Virtual loss for parallel search |
 
 ## Architecture
 

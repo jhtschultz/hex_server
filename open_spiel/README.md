@@ -11,7 +11,7 @@ Wraps the MoHex/Benzene engine as an OpenSpiel bot via the HTTP GTP API.
 ## Files
 
 - `bot.py` — `HexBot` with `step(state) -> action`
-- `client.py` — HTTP client wrapping GTP commands (clear_board, play, genmove)
+- `client.py` — HTTP client wrapping GTP commands (clear_board, play, play-game, genmove, param)
 - `hex_utils.py` — Coordinate conversion between OpenSpiel actions and GTP notation
 
 ## Configuration
@@ -19,6 +19,28 @@ Wraps the MoHex/Benzene engine as an OpenSpiel bot via the HTTP GTP API.
 | Env Var | Default | Description |
 |---------|---------|-------------|
 | `HEX_ENDPOINT` | Cloud Run URL | HTTP endpoint for the MoHex GTP service |
+
+### MoHex Engine Parameters
+
+All `param_mohex` parameters can be passed as keyword arguments to `HexBot`.
+They are applied once before the first move via the `/api/param` endpoint.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_time` | 10 | Seconds per move |
+| `max_games` | 99999999 | Max MCTS simulations per move |
+| `max_nodes` | 11363636 | Max tree nodes |
+| `max_memory` | ~2GB | Memory limit in bytes |
+| `num_threads` | 1 | Parallel search threads |
+| `use_rave` | 1 | Use RAVE values |
+| `reuse_subtree` | 1 | Reuse search tree between moves |
+| `uct_bias_constant` | 0.22 | UCT exploration constant |
+| `expand_threshold` | 10 | Min visits before expanding |
+| `knowledge_threshold` | 256 | Visits before using knowledge |
+| `first_play_urgency` | 0.35 | FPU value for unvisited nodes |
+| `ponder` | 0 | Think on opponent's time |
+
+See `GET /api/param` for the full list of 36 parameters.
 
 ## Starting the server locally
 
@@ -39,5 +61,14 @@ game = pyspiel.load_game("hex")
 state = game.new_initial_state()
 
 bot = HexBot(endpoint="http://localhost:8081")
+action = bot.step(state)
+
+# With engine parameters
+bot = HexBot(
+    endpoint="http://localhost:8081",
+    max_time=5,
+    num_threads=2,
+    uct_bias_constant=0.3,
+)
 action = bot.step(state)
 ```
