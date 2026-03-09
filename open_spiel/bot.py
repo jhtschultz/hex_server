@@ -19,6 +19,46 @@ logger = logging.getLogger(__name__)
 _fallback_bots: dict = {}
 
 
+def _import_mcts():
+    """Import OpenSpiel's MCTS module, handling the case where our
+    local ``open_spiel`` package shadows the installed one."""
+    import importlib
+    import sys
+
+    try:
+        mod = importlib.import_module("open_spiel.python.algorithms.mcts")
+        if hasattr(mod, "MCTSBot"):
+            return mod
+    except (ImportError, AttributeError):
+        pass
+
+    # Local package is shadowing — temporarily evict it from
+    # sys.modules and sys.path, import the real one, then restore.
+    import site
+    saved_path = sys.path[:]
+    saved_modules = {
+        k: v for k, v in sys.modules.items()
+        if k == "open_spiel" or k.startswith("open_spiel.")
+    }
+    for k in saved_modules:
+        del sys.modules[k]
+
+    try:
+        # Keep stdlib paths, just remove entries that contain our
+        # local open_spiel package (i.e. hex_server dir).
+        this_pkg_dir = str(__import__("pathlib").Path(__file__).resolve().parent.parent)
+        sys.path = [
+            p for p in saved_path if p != this_pkg_dir
+        ] + site.getsitepackages() + [site.getusersitepackages()]
+        mod = importlib.import_module("open_spiel.python.algorithms.mcts")
+        return mod
+    finally:
+        sys.path = saved_path
+        # Keep the real open_spiel.python.* modules in sys.modules
+        # so subsequent imports work, but restore our local package.
+        sys.modules.update(saved_modules)
+
+
 def _get_fallback_bot(game: pyspiel.Game):
     """Return a lightweight OpenSpiel MCTS bot for the given game.
 
@@ -27,15 +67,12 @@ def _get_fallback_bot(game: pyspiel.Game):
     """
     key = id(game)
     if key not in _fallback_bots:
-        from open_spiel.python.algorithms.mcts import (
-            MCTSBot,
-            RandomRolloutEvaluator,
-        )
-        _fallback_bots[key] = MCTSBot(
+        mcts = _import_mcts()
+        _fallback_bots[key] = mcts.MCTSBot(
             game,
             uct_c=2.0,
             max_simulations=200,
-            evaluator=RandomRolloutEvaluator(n_rollouts=5),
+            evaluator=mcts.RandomRolloutEvaluator(n_rollouts=5),
             solve=False,
         )
     return _fallback_bots[key]
