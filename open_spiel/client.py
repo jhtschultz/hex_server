@@ -26,6 +26,7 @@ class HexResponse:
 
     move: str  # Move notation, e.g., "a1", "f6"
     raw_payload: Dict[str, Any]  # Full response data
+    degraded: bool = False  # True if move was generated with reduced params
 
 
 DEFAULT_HEX_ENDPOINT = (
@@ -184,6 +185,61 @@ class HexClient:
         except requests.RequestException as exc:
             raise HexTransportError(str(exc)) from exc
 
+    def get_group_params(self, group: str) -> Dict[str, str]:
+        """Get parameters for a specific param group.
+
+        Groups: mohex, mohex_policy, player_board, player_ice,
+                player_vc, game
+        """
+        try:
+            response = self._session.get(
+                f"{self._endpoint}/api/param/{group}",
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("params", {})
+        except requests.RequestException as exc:
+            raise HexTransportError(str(exc)) from exc
+
+    def set_group_params(self, group: str, **params) -> Dict[str, bool]:
+        """Set parameters for a specific param group.
+
+        Groups: mohex, mohex_policy, player_board, player_ice,
+                player_vc, game
+
+        Example:
+            client.set_group_params("player_board", use_ice=0)
+        """
+        try:
+            response = self._session.post(
+                f"{self._endpoint}/api/param/{group}",
+                json=params,
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not data.get("success"):
+                raise HexResponseError(
+                    f"set_group_params({group}) failed: {data}"
+                )
+            return data.get("results", {})
+        except requests.RequestException as exc:
+            raise HexTransportError(str(exc)) from exc
+
+    def get_all_params(self) -> Dict[str, Dict[str, str]]:
+        """Get all parameters from every param group at once."""
+        try:
+            response = self._session.get(
+                f"{self._endpoint}/api/params",
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("params", {})
+        except requests.RequestException as exc:
+            raise HexTransportError(str(exc)) from exc
+
     def genmove(
         self,
         color: str,
@@ -195,18 +251,34 @@ class HexClient:
 
         Args:
             color: "black" or "white"
-            timeout_seconds: Optional timeout override
+            timeout_seconds: Optional server-side wall-clock timeout.
+                If MoHex's pre-search phase (ICE/VCS) exceeds this
+                limit, the engine is restarted with those features
+                disabled and the move is retried.  The returned
+                HexResponse will have ``degraded=True``.
+
+                NOTE: short time controls may produce significantly
+                weaker play because the engine loses its primary
+                positional-analysis features.
 
         Returns:
             HexResponse with the engine's chosen move.
         """
-        payload_timeout = timeout_seconds or self._timeout_seconds
+        engine_timeout = timeout_seconds or self._timeout_seconds
+
+        # The server-side timeout bounds the engine; the HTTP timeout
+        # must be larger to allow for the potential restart+retry.
+        http_timeout = engine_timeout * 2 + 10
+
+        payload: Dict[str, Any] = {"color": color.lower()}
+        if timeout_seconds is not None:
+            payload["timeout"] = engine_timeout
 
         try:
             response = self._session.post(
                 f"{self._endpoint}/api/genmove",
-                json={"color": color.lower()},
-                timeout=payload_timeout + 5,
+                json=payload,
+                timeout=http_timeout,
             )
         except requests.RequestException as exc:
             raise HexTransportError(str(exc)) from exc
@@ -235,4 +307,5 @@ class HexClient:
         return HexResponse(
             move=move,
             raw_payload=data,
+            degraded=bool(data.get("degraded")),
         )
