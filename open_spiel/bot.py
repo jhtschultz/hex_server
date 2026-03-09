@@ -32,6 +32,8 @@ class HexBot:
             timeout_seconds=timeout_seconds,
         )
         self._timeout_seconds = timeout_seconds
+        self._synced_history_len = 0
+        self._board_size: Optional[int] = None
 
     def step(self, state: pyspiel.State) -> int:
         """Select an action for the given state (OpenSpiel Bot interface)."""
@@ -69,12 +71,25 @@ class HexBot:
         return action
 
     def _sync_engine_state(self, state: pyspiel.State, board_size: int) -> None:
-        """Sync the remote engine to match the current game state."""
-        self._client.clear_board()
-        self._client.set_boardsize(board_size)
+        """Incrementally sync the remote engine to match the current game state.
+
+        On first call or board size change: full clear_board + set_boardsize + replay.
+        On subsequent calls: only play moves since last sync.
+        """
         history = state.history()
-        for i, action in enumerate(history):
+
+        if self._board_size != board_size or len(history) < self._synced_history_len:
+            # New game or board size changed — full reset.
+            self._client.clear_board()
+            self._client.set_boardsize(board_size)
+            self._board_size = board_size
+            self._synced_history_len = 0
+
+        # Play only the new moves since last sync.
+        for i in range(self._synced_history_len, len(history)):
             player = i % 2
             color = "black" if player == 0 else "white"
-            move_label = action_to_label(action, board_size)
+            move_label = action_to_label(history[i], board_size)
             self._client.play(color, move_label)
+
+        self._synced_history_len = len(history)
