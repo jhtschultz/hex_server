@@ -42,6 +42,14 @@ They are applied once before the first move via the `/api/param` endpoint.
 
 See `GET /api/param` for the full list of 36 parameters.
 
+## State Synchronization
+
+The MoHex server maintains a single global board. Every call to `step()` sends
+the full game history via `play-game` before requesting a move — this ensures
+the engine is always in the correct position regardless of whether the server
+is shared, restarted, or modified by other callers. The cost is ~40ms per sync,
+which is negligible compared to move generation time.
+
 ## Starting the server locally
 
 ```bash
