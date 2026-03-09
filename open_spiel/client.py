@@ -295,6 +295,14 @@ class HexClient:
                 "Hex service returned invalid JSON."
             ) from exc
 
+        # Engine resigned — position is decided, not an error.
+        if data.get("engine_resigned"):
+            return HexResponse(
+                move=data.get("move", "resign"),
+                raw_payload=data,
+                degraded=True,
+            )
+
         if not data.get("success"):
             raise HexResponseError(f"Genmove failed: {data}")
 

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
+from typing import Optional
 
 import pyspiel
 
@@ -10,15 +10,44 @@ from .hex_utils import (
     ensure_hex_state,
     get_board_size,
     action_to_label,
-    label_to_action,
 )
 from .client import HexClient, HexClientError
 
 logger = logging.getLogger(__name__)
 
+# Lazy-initialized fallback MCTS bot (one per game config).
+_fallback_bots: dict = {}
+
+
+def _get_fallback_bot(game: pyspiel.Game):
+    """Return a lightweight OpenSpiel MCTS bot for the given game.
+
+    Created once and reused.  Uses random rollouts — weak but legal,
+    and only used when MoHex can't generate a move.
+    """
+    key = id(game)
+    if key not in _fallback_bots:
+        from open_spiel.python.algorithms.mcts import (
+            MCTSBot,
+            RandomRolloutEvaluator,
+        )
+        _fallback_bots[key] = MCTSBot(
+            game,
+            uct_c=2.0,
+            max_simulations=200,
+            evaluator=RandomRolloutEvaluator(n_rollouts=5),
+            solve=False,
+        )
+    return _fallback_bots[key]
+
 
 class HexBot:
     """Bot that queries a remote MoHex server for Hex moves.
+
+    When MoHex cannot generate a move (crash, timeout, or engine
+    resignation on proven positions), falls back to OpenSpiel's
+    built-in MCTS with random rollouts.  The fallback is weak but
+    guarantees a legal move so the game can finish.
 
     MoHex engine parameters can be passed as keyword arguments.
     Key parameters:
@@ -77,15 +106,35 @@ class HexBot:
                 timeout_seconds=self._timeout_seconds,
             )
         except HexClientError as exc:
-            raise RuntimeError(f"MoHex client error: {exc}") from exc
+            logger.warning("MoHex genmove failed: %s — using fallback MCTS", exc)
+            return self._fallback_step(hex_state)
+
+        # Engine resigned or returned an invalid move — fall back.
+        raw = response.raw_payload
+        if raw.get("engine_resigned"):
+            logger.warning(
+                "MoHex resigned (position decided) — using fallback MCTS"
+            )
+            return self._fallback_step(hex_state)
 
         move_label = response.move.lower()
         action = label_lookup.get(move_label)
         if action is None:
-            raise ValueError(
-                f"MoHex suggested move '{response.move}' which is not legal."
+            logger.warning(
+                "MoHex returned illegal move '%s' — using fallback MCTS",
+                response.move,
             )
+            return self._fallback_step(hex_state)
+
+        if response.degraded:
+            logger.info("MoHex returned degraded move: %s", response.move)
+
         return action
+
+    def _fallback_step(self, state: pyspiel.State) -> int:
+        """Generate a move using OpenSpiel's built-in MCTS."""
+        bot = _get_fallback_bot(state.get_game())
+        return bot.step(state)
 
     def _apply_params(self) -> None:
         """Apply MoHex engine parameters before every genmove.
