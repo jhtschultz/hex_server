@@ -124,6 +124,31 @@ class HexClient:
             raise HexResponseError(f"Play failed: {data}")
         return data
 
+    def play_game(self, moves: list, size: int = 11) -> Dict[str, Any]:
+        """
+        Reset the board and play a sequence of moves in one call.
+
+        Uses MoHex's native 'play-game' GTP command — much faster than
+        N separate play calls. Moves alternate colors starting with black.
+
+        Args:
+            moves: List of move labels, e.g., ["a1", "b2", "c3"]
+            size: Board size (default 11)
+        """
+        try:
+            response = self._session.post(
+                f"{self._endpoint}/api/play-game",
+                json={"moves": moves, "size": size},
+                timeout=self._timeout_seconds,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not data.get("success"):
+                raise HexResponseError(f"play-game failed: {data}")
+            return data
+        except requests.RequestException as exc:
+            raise HexTransportError(str(exc)) from exc
+
     def genmove(
         self,
         color: str,

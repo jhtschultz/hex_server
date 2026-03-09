@@ -139,6 +139,39 @@ def generate_move():
     return jsonify({"success": success, "move": move, "color": color})
 
 
+@app.route("/api/play-game", methods=["POST"])
+def play_game():
+    """
+    Reset the board and play a sequence of moves in one call.
+
+    Uses MoHex's native 'play-game' GTP command which does
+    clear_board + replay internally — much faster than N separate
+    play calls.
+
+    Request body: {"moves": ["a1", "b2", "c3", ...], "size": 11}
+    Moves alternate colors starting with black.
+    """
+    data = request.get_json()
+    moves = data.get("moves", [])
+    size = data.get("size", 11)
+
+    # Set board size first
+    response = send_gtp_command(f"boardsize {size}")
+    if not response.startswith("="):
+        return jsonify({"success": False, "error": "boardsize failed"}), 500
+
+    # play-game takes space-separated moves, alternating colors
+    if moves:
+        moves_str = " ".join(moves)
+        response = send_gtp_command(f"play-game {moves_str}")
+        success = response.startswith("=")
+    else:
+        response = send_gtp_command("clear_board")
+        success = response.startswith("=")
+
+    return jsonify({"success": success, "moves_played": len(moves)})
+
+
 @app.route("/api/showboard", methods=["GET"])
 def show_board():
     """Get ASCII representation of the current board state."""

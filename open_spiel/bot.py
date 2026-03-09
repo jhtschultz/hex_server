@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import List, Optional
 
 import pyspiel
 
@@ -32,7 +32,7 @@ class HexBot:
             timeout_seconds=timeout_seconds,
         )
         self._timeout_seconds = timeout_seconds
-        self._synced_history_len = 0
+        self._synced_moves: List[str] = []
         self._board_size: Optional[int] = None
 
     def step(self, state: pyspiel.State) -> int:
@@ -71,39 +71,29 @@ class HexBot:
         return action
 
     def _sync_engine_state(self, state: pyspiel.State, board_size: int) -> None:
-        """Incrementally sync the remote engine to match the current game state.
+        """Sync the remote engine using MoHex's native play-game command.
 
-        Tries incremental sync first (only new moves). Falls back to full
-        replay if the engine rejects a move (e.g., after a restart or if
-        another client modified the GTP session).
+        Converts the full history to move labels and sends them in one call.
+        Only resends if the history has changed. Falls back to incremental
+        play calls if play-game is not available.
         """
         history = state.history()
+        moves = [action_to_label(history[i], board_size) for i in range(len(history))]
 
-        needs_full_reset = (
-            self._board_size != board_size
-            or len(history) < self._synced_history_len
-        )
+        # Skip if already synced to this exact position.
+        if self._board_size == board_size and moves == self._synced_moves:
+            return
 
-        if not needs_full_reset:
-            try:
-                self._play_moves(history, board_size, self._synced_history_len)
-                self._synced_history_len = len(history)
-                return
-            except HexClientError:
-                logger.warning("Incremental sync failed, falling back to full replay")
-                needs_full_reset = True
-
-        if needs_full_reset:
+        try:
+            self._client.play_game(moves, size=board_size)
+        except HexClientError:
+            # Fallback: manual clear + replay
+            logger.warning("play-game failed, falling back to manual replay")
             self._client.clear_board()
             self._client.set_boardsize(board_size)
-            self._board_size = board_size
-            self._play_moves(history, board_size, 0)
-            self._synced_history_len = len(history)
+            for i, move in enumerate(moves):
+                color = "black" if i % 2 == 0 else "white"
+                self._client.play(color, move)
 
-    def _play_moves(self, history, board_size: int, start: int) -> None:
-        """Play moves from start index to end of history."""
-        for i in range(start, len(history)):
-            player = i % 2
-            color = "black" if player == 0 else "white"
-            move_label = action_to_label(history[i], board_size)
-            self._client.play(color, move_label)
+        self._board_size = board_size
+        self._synced_moves = moves
