@@ -73,23 +73,37 @@ class HexBot:
     def _sync_engine_state(self, state: pyspiel.State, board_size: int) -> None:
         """Incrementally sync the remote engine to match the current game state.
 
-        On first call or board size change: full clear_board + set_boardsize + replay.
-        On subsequent calls: only play moves since last sync.
+        Tries incremental sync first (only new moves). Falls back to full
+        replay if the engine rejects a move (e.g., after a restart or if
+        another client modified the GTP session).
         """
         history = state.history()
 
-        if self._board_size != board_size or len(history) < self._synced_history_len:
-            # New game or board size changed — full reset.
+        needs_full_reset = (
+            self._board_size != board_size
+            or len(history) < self._synced_history_len
+        )
+
+        if not needs_full_reset:
+            try:
+                self._play_moves(history, board_size, self._synced_history_len)
+                self._synced_history_len = len(history)
+                return
+            except HexClientError:
+                logger.warning("Incremental sync failed, falling back to full replay")
+                needs_full_reset = True
+
+        if needs_full_reset:
             self._client.clear_board()
             self._client.set_boardsize(board_size)
             self._board_size = board_size
-            self._synced_history_len = 0
+            self._play_moves(history, board_size, 0)
+            self._synced_history_len = len(history)
 
-        # Play only the new moves since last sync.
-        for i in range(self._synced_history_len, len(history)):
+    def _play_moves(self, history, board_size: int, start: int) -> None:
+        """Play moves from start index to end of history."""
+        for i in range(start, len(history)):
             player = i % 2
             color = "black" if player == 0 else "white"
             move_label = action_to_label(history[i], board_size)
             self._client.play(color, move_label)
-
-        self._synced_history_len = len(history)
