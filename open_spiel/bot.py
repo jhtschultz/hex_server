@@ -49,8 +49,6 @@ class HexBot:
             timeout_seconds=timeout_seconds,
         )
         self._timeout_seconds = timeout_seconds
-        self._synced_moves: List[str] = []
-        self._board_size: Optional[int] = None
         self._mohex_params = mohex_params
         self._params_applied = False
 
@@ -103,16 +101,12 @@ class HexBot:
     def _sync_engine_state(self, state: pyspiel.State, board_size: int) -> None:
         """Sync the remote engine using MoHex's native play-game command.
 
-        Converts the full history to move labels and sends them in one call.
-        Only resends if the history has changed. Falls back to incremental
-        play calls if play-game is not available.
+        Always sends the full position to avoid stale state — the server
+        has a single global board, so we can't trust local caching.
+        play-game is ~40ms so the cost is negligible.
         """
         history = state.history()
         moves = [action_to_label(history[i], board_size) for i in range(len(history))]
-
-        # Skip if already synced to this exact position.
-        if self._board_size == board_size and moves == self._synced_moves:
-            return
 
         try:
             self._client.play_game(moves, size=board_size)
@@ -124,6 +118,3 @@ class HexBot:
             for i, move in enumerate(moves):
                 color = "black" if i % 2 == 0 else "white"
                 self._client.play(color, move)
-
-        self._board_size = board_size
-        self._synced_moves = moves
