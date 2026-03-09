@@ -134,6 +134,49 @@ response times.
 If the retry also times out (unlikely with analysis features disabled),
 the endpoint returns HTTP 504 with an error message.
 
+### Known MoHex Bug: Crash on Proven Positions
+
+MoHex can segfault when ICE fillin analysis proves a position is won
+but the engine can't extract a concrete move to play.  The crash
+occurs in `Resistance::ComputeScores()` during `PerformPreSearch()`.
+
+**Root cause:** `InitSearch()` calls `ComputeAll()` which fills cells
+via ICE, proving the game is over.  It then removes the fillin and
+recomputes without ICE (to get a non-empty consider set).  But the
+resulting board state is inconsistent for `PerformPreSearch()`, which
+calls `Resistance::Evaluate()` on it and segfaults.  With pre-search
+disabled, MCTS sees "root is proven win" in 1 simulation and returns
+an empty move sequence; `RandomEmptyCell()` then fails because all
+cells are filled.
+
+**Reproduction position (11×11, black to move):**
+
+```
+j2 e8 d8 a9 e6 c6 d9 c10 f6 b10 g4 k8 d10 d1 h2 g8 g3 k9 g5 a3 e7 a7
+```
+
+```bash
+echo "boardsize 11
+play-game j2 e8 d8 a9 e6 c6 d9 c10 f6 b10 g4 k8 d10 d1 h2 g8 g3 k9 g5 a3 e7 a7
+genmove black
+quit" | mohex
+# → Segmentation fault
+```
+
+**API behavior:** The server detects the crash and returns:
+
+```json
+{
+  "success": false,
+  "move": "resign",
+  "engine_resigned": true,
+  "warning": "MoHex considers this position decided and crashed attempting to generate a move."
+}
+```
+
+The OpenSpiel bot (`HexBot`) automatically falls back to OpenSpiel's
+built-in MCTS when this happens, so games always finish.
+
 ### Engine Parameters
 
 Parameters are organized into groups matching MoHex's GTP param commands.
