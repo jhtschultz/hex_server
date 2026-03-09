@@ -50,7 +50,6 @@ class HexBot:
         )
         self._timeout_seconds = timeout_seconds
         self._mohex_params = mohex_params
-        self._params_applied = False
 
     def step(self, state: pyspiel.State) -> int:
         """Select an action for the given state (OpenSpiel Bot interface)."""
@@ -66,8 +65,8 @@ class HexBot:
             for action in legal_actions
         }
 
-        self._apply_params()
         self._sync_engine_state(hex_state, board_size)
+        self._apply_params()
 
         current_player = hex_state.current_player()
         color = "black" if current_player == 0 else "white"
@@ -89,14 +88,20 @@ class HexBot:
         return action
 
     def _apply_params(self) -> None:
-        """Apply MoHex engine parameters (once)."""
-        if self._params_applied or not self._mohex_params:
+        """Apply MoHex engine parameters before every genmove.
+
+        Applied after sync (not before) and on every call — params are
+        cheap to set and this guards against silent failures that would
+        leave MoHex running with defaults (e.g. max_time=10).
+        """
+        if not self._mohex_params:
             return
         try:
             self._client.set_params(**self._mohex_params)
-            self._params_applied = True
         except HexClientError as exc:
-            logger.warning("Failed to set MoHex params: %s", exc)
+            raise RuntimeError(
+                f"Failed to set MoHex params {self._mohex_params}: {exc}"
+            ) from exc
 
     def _sync_engine_state(self, state: pyspiel.State, board_size: int) -> None:
         """Sync the remote engine using MoHex's native play-game command.
